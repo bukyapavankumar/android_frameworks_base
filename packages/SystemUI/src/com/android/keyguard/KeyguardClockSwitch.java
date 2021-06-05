@@ -18,6 +18,7 @@ import android.transition.TransitionValues;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.util.MathUtils;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -29,6 +30,7 @@ import androidx.annotation.VisibleForTesting;
 import com.android.internal.colorextraction.ColorExtractor;
 import com.android.internal.colorextraction.ColorExtractor.OnColorsChangedListener;
 import com.android.keyguard.clock.ClockManager;
+import com.android.keyguard.KeyguardSliceView;
 import com.android.systemui.Interpolators;
 import com.android.systemui.R;
 import com.android.systemui.colorextraction.SysuiColorExtractor;
@@ -110,7 +112,7 @@ public class KeyguardClockSwitch extends RelativeLayout {
      * Status area (date and other stuff) shown below the clock. Plugin can decide whether or not to
      * show it below the alternate clock.
      */
-    private View mKeyguardStatusArea;
+    private KeyguardSliceView mKeyguardStatusArea;
 
     /**
      * Maintain state so that a newly connected plugin can be initialized.
@@ -228,6 +230,7 @@ public class KeyguardClockSwitch extends RelativeLayout {
             mClockPlugin.onDestroyView();
             mClockPlugin = null;
         }
+        mKeyguardStatusArea.setRowGravity(isTypeClock(plugin) ? Gravity.START : Gravity.CENTER);
         if (plugin == null) {
             if (mShowingHeader) {
                 mClockView.setVisibility(View.GONE);
@@ -253,10 +256,8 @@ public class KeyguardClockSwitch extends RelativeLayout {
             mBigClockContainer.addView(bigClockView);
             updateBigClockVisibility();
         }
-        // Hide default clock.
-        if (!plugin.shouldShowStatusArea()) {
-            mKeyguardStatusArea.setVisibility(View.GONE);
-        }
+        // Show / hide status area
+        mKeyguardStatusArea.setVisibility(plugin.shouldShowStatusArea() ? View.VISIBLE : View.GONE);
         // Initialize plugin parameters.
         mClockPlugin = plugin;
         mClockPlugin.setStyle(getPaint().getStyle());
@@ -436,6 +437,14 @@ public class KeyguardClockSwitch extends RelativeLayout {
                 mBigClockContainer.setVisibility(VISIBLE);
             }
         }
+    }
+
+    private boolean isTypeClock(ClockPlugin plugin) {
+        return plugin != null && plugin.getName().equals("type");
+    }
+
+    public boolean isTypeClock() {
+        return isTypeClock(mClockPlugin);
     }
 
     /**
