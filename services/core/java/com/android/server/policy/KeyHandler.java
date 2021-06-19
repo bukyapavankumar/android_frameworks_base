@@ -48,6 +48,7 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.UserHandle;
+import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.Settings;
 import android.telecom.TelecomManager;
@@ -76,7 +77,7 @@ public class KeyHandler {
     private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
 
     private static final int GESTURE_REQUEST = 1;
-    private static final int GESTURE_WAKE_LOCK_DURATION = 250; // ms
+    private static final int WAKE_LOCK_DURATION = 250; // ms
 
     private static final int MAX_SUPPORTED_GESTURES = 15;
 
@@ -156,8 +157,6 @@ public class KeyHandler {
     private int mDrawMGesture;
     private int mDrawWGesture;
     private int mDrawSGesture;
-
-    private long[] mVibePattern;
 
     private boolean mGesturesEnabled;
     private boolean mSingleDoubleSpecialCase;
@@ -414,8 +413,6 @@ public class KeyHandler {
     private void ensureVibrator() {
         if (mVibrator == null) {
             mVibrator = (Vibrator) mContext.getSystemService(Context.VIBRATOR_SERVICE);
-            mVibePattern = getLongIntArray(mContext.getResources(),
-                    R.array.config_longPressVibePattern);
             if (!mVibrator.hasVibrator()) {
                 mVibrator = null;
             }
@@ -617,10 +614,10 @@ public class KeyHandler {
                 break;
             default:
                 handled = false;
-                releaseGestureWakeLock();
                 break;
         }
 
+        releaseGestureWakeLock();
         doHapticFeedback(handled);
     }
 
@@ -628,12 +625,18 @@ public class KeyHandler {
         if (mGestureWakeLock.isHeld()) {
             mGestureWakeLock.release();
         }
-        mGestureWakeLock.acquire(KeyHandler.GESTURE_WAKE_LOCK_DURATION);
+        mGestureWakeLock.acquire(WAKE_LOCK_DURATION);
     }
 
     private void releaseGestureWakeLock() {
         if (mGestureWakeLock.isHeld()) {
             mGestureWakeLock.release();
+        }
+    }
+
+    private void releaseProximityWakeLock() {
+        if (mProximityWakeLock.isHeld()) {
+            mProximityWakeLock.release();
         }
     }
 
@@ -696,11 +699,11 @@ public class KeyHandler {
     }
 
     private void processEvent(final KeyEvent keyEvent) {
-        mProximityWakeLock.acquire();
+        mProximityWakeLock.acquire(WAKE_LOCK_DURATION);
         mSensorManager.registerListener(new SensorEventListener() {
             @Override
             public void onSensorChanged(SensorEvent event) {
-                mProximityWakeLock.release();
+                releaseProximityWakeLock();
                 mSensorManager.unregisterListener(this);
                 if (!mHandler.hasMessages(GESTURE_REQUEST)) {
                     // The sensor took to long, ignoring.
@@ -741,9 +744,9 @@ public class KeyHandler {
                 Settings.System.HAPTIC_FEEDBACK_ENABLED, 0, UserHandle.USER_CURRENT) != 0;
         if (hapticsEnabled && mVibrator != null) {
             if (success) {
-                mVibrator.vibrate(mVibePattern, -1, VIBRATION_ATTRIBUTES);
+                mVibrator.vibrate(VibrationEffect.get(VibrationEffect.EFFECT_CLICK), VIBRATION_ATTRIBUTES);
             } else {
-                mVibrator.vibrate(350L, VIBRATION_ATTRIBUTES);
+                mVibrator.vibrate(VibrationEffect.get(VibrationEffect.EFFECT_DOUBLE_CLICK), VIBRATION_ATTRIBUTES);
             }
         }
     }
