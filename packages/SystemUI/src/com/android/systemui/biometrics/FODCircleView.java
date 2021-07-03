@@ -31,6 +31,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.RemoteException;
 import android.provider.Settings;
+import android.util.BoostFramework;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -70,7 +71,6 @@ public class FODCircleView extends ImageView {
 
     private IFingerprintInscreen mFingerprintInscreenDaemon;
 
-    private int mDreamingOffsetX;
     private int mDreamingOffsetY;
 
     private boolean mFading;
@@ -79,9 +79,14 @@ public class FODCircleView extends ImageView {
     private boolean mIsCircleShowing;
     private boolean mIsDreaming;
     private boolean mIsKeyguard;
+    private boolean mIsScreenTurnedOn;
     private boolean mTouchedOutside;
     private boolean mCanUnlockWithFp;
     private boolean mFpDisabled;
+
+    private BoostFramework mPerfBoost;
+    private boolean mIsPerfLockAcquired = false;
+    private static final int BOOST_DURATION_TIMEOUT = 2000;
 
     private Handler mHandler;
 
@@ -148,6 +153,7 @@ public class FODCircleView extends ImageView {
                 mBurnInProtectionTimer.schedule(new BurnInProtectionTask(), 0, 60 * 1000);
             } else if (mBurnInProtectionTimer != null) {
                 mBurnInProtectionTimer.cancel();
+                updatePosition();
             }
         }
 
@@ -181,18 +187,21 @@ public class FODCircleView extends ImageView {
 
         @Override
         public void onScreenTurnedOff() {
+            mIsScreenTurnedOn = false;
             hide();
         }
 
         @Override
         public void onStartedWakingUp() {
-            if (mUpdateMonitor.isFingerprintDetectionRunning() && mIsKeyguard) {
+            if (!mIsScreenTurnedOn  && mIsKeyguard &&
+                    mUpdateMonitor.isFingerprintDetectionRunning()) {
                 show();
             }
         }
 
         @Override
         public void onScreenTurnedOn() {
+            mIsScreenTurnedOn = true;
             if (mUpdateMonitor.isFingerprintDetectionRunning() && mIsKeyguard) {
                 show();
             }
@@ -290,6 +299,7 @@ public class FODCircleView extends ImageView {
 
         mUpdateMonitor = Dependency.get(KeyguardUpdateMonitor.class);
         mUpdateMonitor.registerCallback(mMonitorCallback);
+        mPerfBoost = new BoostFramework();
     }
 
     @Override
@@ -356,6 +366,12 @@ public class FODCircleView extends ImageView {
         } catch (RemoteException e) {
             // do nothing
         }
+        if (!mIsPerfLockAcquired) {
+            mPerfBoost.perfHint(BoostFramework.VENDOR_HINT_FIRST_LAUNCH_BOOST,
+                    null,
+                    BOOST_DURATION_TIMEOUT);
+            mIsPerfLockAcquired = true;
+        }
     }
 
     public void dispatchRelease() {
@@ -383,6 +399,10 @@ public class FODCircleView extends ImageView {
         } catch (RemoteException e) {
             // do nothing
         }
+        if (mIsPerfLockAcquired) {
+            mPerfBoost.perfLockRelease();
+            mIsPerfLockAcquired = false;
+        }
     }
 
     public void showCircle() {
@@ -395,6 +415,7 @@ public class FODCircleView extends ImageView {
         dispatchPress();
 
         setImageDrawable(null);
+        updatePosition();
         invalidate();
     }
 
@@ -497,8 +518,7 @@ public class FODCircleView extends ImageView {
         mPressedParams.x = mParams.x = x;
         mPressedParams.y = mParams.y = y;
 
-        if (mIsDreaming) {
-            mParams.x += mDreamingOffsetX;
+        if (mIsDreaming && !mIsCircleShowing) {
             mParams.y += mDreamingOffsetY;
         }
 
@@ -562,18 +582,8 @@ public class FODCircleView extends ImageView {
         public void run() {
             long now = System.currentTimeMillis() / 1000 / 60;
 
-            mDreamingOffsetX = (int) (now % (mDreamingMaxOffset * 4));
-            if (mDreamingOffsetX > mDreamingMaxOffset * 2) {
-                mDreamingOffsetX = mDreamingMaxOffset * 4 - mDreamingOffsetX;
-            }
-
             // Let y to be not synchronized with x, so that we get maximum movement
             mDreamingOffsetY = (int) ((now + mDreamingMaxOffset / 3) % (mDreamingMaxOffset * 2));
-            if (mDreamingOffsetY > mDreamingMaxOffset * 2) {
-                mDreamingOffsetY = mDreamingMaxOffset * 4 - mDreamingOffsetY;
-            }
-
-            mDreamingOffsetX -= mDreamingMaxOffset;
             mDreamingOffsetY -= mDreamingMaxOffset;
 
             mHandler.post(() -> updatePosition());
